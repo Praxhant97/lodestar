@@ -1147,6 +1147,62 @@ mod test {
         assert_eq!(config.flag_penalty, FLAG_PENALTY);
     }
 
+    #[test]
+    fn test_get_agent_boundary_cases() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let contract_id = env.register(LodestarAgents, (admin.clone(),));
+        let client = LodestarAgentsClient::new(&env, &contract_id);
+
+        let missing = Address::generate(&env);
+        assert!(client.get_agent(&missing).is_none());
+        assert_eq!(client.get_agent_count(), 0);
+        assert_eq!(client.list_agents(&0).len(), 0);
+        assert_eq!(client.list_agents_page(&0, &0).len(), 0);
+
+        let mut agent_ids = vec![&env];
+        for _ in 0..3 {
+            let agent_addr = Address::generate(&env);
+            let owner = Address::generate(&env);
+            setup_agent(&env, &contract_id, &agent_addr, &owner);
+            agent_ids.push_back(agent_addr.clone());
+        }
+
+        assert_eq!(client.get_agent_count(), 3);
+        assert!(client.get_agent(&agent_ids.get(0).unwrap()).is_some());
+        assert!(client.get_agent(&agent_ids.get(1).unwrap()).is_some());
+        assert!(client.get_agent(&agent_ids.get(2).unwrap()).is_some());
+
+        let boundary_cases = [
+            (0u32, 0u32, 0u32),
+            (0u32, 1u32, 1u32),
+            (0u32, 2u32, 2u32),
+            (1u32, 1u32, 1u32),
+            (1u32, 2u32, 1u32),
+            (2u32, 1u32, 1u32),
+            (3u32, 1u32, 0u32),
+            (u32::MAX, 1u32, 0u32),
+            (0u32, u32::MAX, 3u32),
+        ];
+
+        for (page, page_size, expected_len) in boundary_cases {
+            assert_eq!(
+                client.list_agents_page(&page, &page_size).len(),
+                expected_len,
+                "page={page} page_size={page_size} should yield {expected_len} entries"
+            );
+        }
+
+        assert_eq!(client.list_agents(&0).len(), 0);
+        assert_eq!(client.list_agents(&1).len(), 1);
+        assert_eq!(client.list_agents(&2).len(), 2);
+        assert_eq!(client.list_agents(&u32::MAX).len(), 3);
+
+        let after_last = Address::generate(&env);
+        assert!(client.get_agent(&after_last).is_none());
+    }
+
     /// Seed a non-zero `daily_spent_stroops` directly into contract storage.
     ///
     /// soroban-sdk 22 requires all `env.storage()` writes to happen inside a
