@@ -369,8 +369,44 @@ impl LodestarAgents {
         }
     }
 
-    // Record a payment outcome — updates score, stats, and daily spend
-    // Only the service provider (caller) may record a payment for their service.
+    /// Record a payment outcome for an agent's service.
+    ///
+    /// # Parameters
+    /// - `env`: Soroban environment used for storage, events, ledger access, and the registry call.
+    /// - `agent_address`: Agent whose score, payment counters, and volume are updated.
+    /// - `service_id`: Service identifier passed to the registry contract.
+    /// - `amount_stroops`: Payment amount in stroops; must be strictly positive.
+    /// - `success`: Whether the payment succeeded.
+    /// - `caller`: Address that signs the invocation and must be the registered service provider.
+    ///
+    /// # Returns
+    /// Returns `Ok(())` after persisting the updated agent and policy state.
+    /// Returns `Err(AgentError::InvalidAmount)` if `amount_stroops <= 0`.
+    /// Returns `Err(AgentError::ArithmeticOverflow)` if updating the agent's total volume or the
+    /// policy's daily spend overflows `i128`.
+    ///
+    /// # Authorisation
+    /// `caller` must satisfy `require_auth()` and must equal the provider returned by the
+    /// registry contract's `get_service(service_id)` call.
+    ///
+    /// # Panics
+    /// - `expect("registry contract not set — call init() first")` if the registry contract
+    ///   address has not been initialized.
+    /// - `panic!("unauthorized: caller is not the service provider")` if the registry's provider
+    ///   does not match `caller`.
+    /// - `expect("agent not found")` if `DataKey::Agent(agent_address)` is missing.
+    /// - `expect("policy not found")` if `DataKey::Policy(agent_address)` is missing.
+    /// - Any panic or revert raised by the registry contract's `get_service` implementation.
+    ///
+    /// # Storage
+    /// Reads `DataKey::RegistryContract`, `DataKey::Agent(agent_address)`, and
+    /// `DataKey::Policy(agent_address)`.
+    /// Writes `DataKey::Agent(agent_address)` and `DataKey::Policy(agent_address)`.
+    /// Both written entries have their TTL extended.
+    ///
+    /// # Cost
+    /// One auth check, one persistent read for the registry address, one cross-contract call,
+    /// two persistent reads, up to two persistent writes, and two TTL extensions.
     pub fn record_payment(
         env: Env,
         agent_address: Address,
