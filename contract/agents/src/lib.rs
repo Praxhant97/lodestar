@@ -155,6 +155,8 @@ impl LodestarAgents {
 
     /// Deploy-time setup: store the admin address for privileged operations.
     pub fn __constructor(env: Env, admin: Address) {
+        // Persistent keys touched here:
+        // - DataKey::Admin
         env.storage().persistent().set(&DataKey::Admin, &admin);
         env.storage()
             .persistent()
@@ -951,6 +953,24 @@ mod test {
         let admin = Address::generate(&env);
         let contract_id = env.register(LodestarAgents, (admin.clone(),));
         let client = LodestarAgentsClient::new(&env, &contract_id);
+
+        assert_eq!(client.get_admin(), admin);
+    }
+
+    #[test]
+    fn test_constructor_admin_remains_readable_after_ttl_boundary() {
+        let env = Env::default();
+        env.ledger().with_mut(|li| {
+            li.min_persistent_entry_ttl = TEST_MAX_TTL;
+            li.min_temp_entry_ttl = TEST_MAX_TTL;
+        });
+
+        let admin = Address::generate(&env);
+        let contract_id = env.register(LodestarAgents, (admin.clone(),));
+        let client = LodestarAgentsClient::new(&env, &contract_id);
+
+        env.ledger()
+            .with_mut(|li| li.sequence_number += TEST_MAX_TTL + 1);
 
         assert_eq!(client.get_admin(), admin);
     }
